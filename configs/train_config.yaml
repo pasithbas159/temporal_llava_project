@@ -1,0 +1,7 @@
+# Training configuration
+batch_size: 2
+lr: 5e-5
+num_epochs: 3
+frame_size: 576
+gamma: 0.5
+lora: true

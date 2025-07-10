@@ -1,0 +1,9 @@
+# pip dependencies
+# Add your dependencies here, e.g.:
+torch
+transformers
+peft
+datasets
+pillow
+tqdm
+accelerate
