@@ -1,3 +1,58 @@
+import torch
+import torch.nn as nn
+import math
+
+# ====== Helper Functions ======
+def rotate_half(x):
+    x1, x2 = x.chunk(2, dim=-1)
+    return torch.cat([-x2, x1], dim=-1)
+
+def precompute_rope_freqs(length, dim, dtype=torch.float32):
+    theta = 10000 ** (-torch.arange(0, dim, 2, dtype=dtype) / dim)
+    idx = torch.arange(length, dtype=dtype)
+    freqs = torch.einsum('i,j->ij', idx, theta)
+    freqs = torch.cat((freqs, freqs), dim=-1)  # duplicate for cos/sin
+    return freqs
+
+def apply_rope(x, freqs):
+    sin, cos = freqs.sin(), freqs.cos()
+    return x * cos + rotate_half(x) * sin
+
+def apply_dual_rope(q, k, freqs_abs, temporal_ids, freqs_temp):
+    # Apply absolute RoPE
+    freqs_abs = freqs_abs.to(q.device)[None, None, :q.size(2)]
+    q = apply_rope(q, freqs_abs)
+    k = apply_rope(k, freqs_abs)
+    # Apply temporal RoPE
+    freqs_temp = freqs_temp.to(q.device)[temporal_ids]
+    freqs_temp = freqs_temp[None, None, :, :]
+    q = apply_rope(q, freqs_temp)
+    k = apply_rope(k, freqs_temp)
+    return q, k
+
+def compute_temporal_ids(seq_len, frame_size, gamma=1.0):
+    frame_ids = torch.arange(seq_len) // frame_size
+    return torch.floor(frame_ids.float() * gamma).long()
+
+def build_fwbc_mask(seq_len, frame_size):
+    mask = torch.full((seq_len, seq_len), float('-inf'))
+    for i in range(seq_len):
+        for j in range(i + 1):  # causal
+            mask[i, j] = 0
+        if i // frame_size == j // frame_size:
+            mask[i, j] = 0  # same frame
+    return mask
+
+def split_heads(x, head_dim):
+    B, T, C = x.shape
+    H = C // head_dim
+    x = x.view(B, T, H, head_dim).transpose(1, 2)  # (B, H, T, dh)
+    return x
+
+def combine_heads(x):
+    B, H, T, dh = x.shape
+    return x.transpose(1, 2).reshape(B, T, H * dh)
+
 class TCAttention(nn.Module):
     def __init__(self, orig_attn, frame_size=576, gamma=0.5, max_seq_len=2048):
         super().__init__()
