@@ -1,77 +1,61 @@
 # Main training script
 import os
-from torch.utils.data import DataLoader
 import torch
-from transformers import get_cosine_schedule_with_warmup
-import tqdm
+from datasets import Dataset
+from transformers import EarlyStoppingCallback
+from trl import SFTTrainer, SFTConfig
 
-from data.dataset import SimpleDataset, make_collate_fn
-from models.patch_llava import patch_llava_with_tcattention
+from utils import convert_to_conversation
+from models.patch_llava import patch_llava_with_mivc_tcattention
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 
-train_data = [
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    ("./data/train/000000039769.jpg", "<image>\nWhat is happening?", "A person is cooking."),
-    # Add more (image_path, prompt, target)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+use_bf16 = True if device == "cuda" else False
+
+instruction = """
+  What is happening?
+"""
+
+samples = [
+    {
+        "image": ["./data/train/000000039769.jpg"],
+        "text": "A person is cooking."
+    } for _ in range(20)
 ]
 
-def main(train_data):
-    
-    model, processor = patch_llava_with_tcattention(frame_size=576, gamma=0.5, lora=True)
-    
-    collate_fn = make_collate_fn(processor)
-    
-    dataset = SimpleDataset(train_data)
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
-    
-    scaler = torch.cuda.amp.GradScaler()
-    model.train()
-    
-    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=5e-5)
-    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=10, num_training_steps=100)
-    
-    # ==== Training Loop ====
-    num_epochs = 1
-    for epoch in range(num_epochs):
-        print(f"🔁 Epoch {epoch+1}/{num_epochs}")
-        pbar = tqdm.tqdm(dataloader)
-        for inputs, labels in pbar:
-            optimizer.zero_grad()
-            with torch.cuda.amp.autocast():
-                # Cast trainable parameters to float32 before computing gradients
-                for param in model.parameters():
-                    if param.requires_grad:
-                        param.data = param.data.to(torch.float32)
-                outputs = model(**inputs, labels=labels)
-                loss = outputs.loss
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            scheduler.step()
+def main():
+    train_conversation_dataset = Dataset.from_list([convert_to_conversation(sample, instruction) for sample in samples])
+    validation_conversation_dataset = Dataset.from_list([convert_to_conversation(sample, instruction) for sample in samples])
 
-            pbar.set_description(f"Loss: {loss.item():.4f}")
+    model, processor = patch_llava_with_mivc_tcattention(frame_size=576, gamma=0.5, mivc_dim=1024)
+
+    # Prepare SFTConfig
+    training_args = SFTConfig(
+        max_length=512,
+        output_dir="/tmp",
+        bf16=use_bf16,
+        fp16=not use_bf16,
+    )
+
+    # Prepare SFTTrainer
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=train_conversation_dataset,
+        eval_dataset = validation_conversation_dataset,
+        args=training_args
+    )
     
+    trainer.add_callback(EarlyStoppingCallback(
+        early_stopping_patience=6
+    ))
+
+    # Train
+    trainer.train()
+    
+    # Save the model
     model.save_pretrained("pasithbas159/TC_LLaVA_hydro_v0", push_to_hub=True, token=HUGGINGFACE_TOKEN)
     processor.save_pretrained("pasithbas159/TC_LLaVA_hydro_v0", push_to_hub=True, token=HUGGINGFACE_TOKEN)
     
-if __name__ == "__main__":
-    main(train_data)
+if __name__ == '__main__':
+    main()
