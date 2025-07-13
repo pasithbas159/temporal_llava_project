@@ -8,3 +8,5 @@ pillow
 tqdm
 accelerate
 trl
+bitsandbytes
+python-dotenv

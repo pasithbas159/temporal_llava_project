@@ -2,16 +2,16 @@
 import os
 import torch
 from datasets import Dataset
+from dotenv import load_dotenv
 from transformers import EarlyStoppingCallback
 from trl import SFTTrainer, SFTConfig
 
 from utils import convert_to_conversation
 from models.patch_llava import patch_llava_with_mivc_tcattention
 
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+load_dotenv()
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-use_bf16 = True if device == "cuda" else False
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 
 instruction = """
   What is happening?
@@ -25,6 +25,10 @@ samples = [
 ]
 
 def main():
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    use_bf16 = True if device == "cuda" else False
+    
     train_conversation_dataset = Dataset.from_list([convert_to_conversation(sample, instruction) for sample in samples])
     validation_conversation_dataset = Dataset.from_list([convert_to_conversation(sample, instruction) for sample in samples])
 
@@ -32,10 +36,25 @@ def main():
 
     # Prepare SFTConfig
     training_args = SFTConfig(
-        max_length=512,
-        output_dir="/tmp",
+        per_device_train_batch_size = 4,
+        gradient_accumulation_steps = 8,
+        num_train_epochs = 30,
+        max_seq_length=512,
+        output_dir="/workspace/temporal_llava_project/output",
         bf16=use_bf16,
         fp16=not use_bf16,
+        logging_steps = 1,
+        optim = "adamw_8bit",
+        weight_decay = 0.01,
+        lr_scheduler_type = "linear",
+        learning_rate = 2e-4,
+        # report_to = "tensorboard",
+        eval_strategy="steps",
+        eval_steps=1,
+        do_eval=True,
+        metric_for_best_model="eval_loss",
+        load_best_model_at_end=True,
+        seed = 3407,
     )
 
     # Prepare SFTTrainer

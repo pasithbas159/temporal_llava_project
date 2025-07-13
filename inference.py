@@ -3,11 +3,18 @@ from PIL import Image
 from transformers import LlavaForConditionalGeneration, AutoProcessor
 import torch
 
-from models.patch_llava import patch_llava_with_tcattention
+from models.patch_llava import patch_llava_with_mivc_tcattention
 
 if __name__ == "__main__":
     
-    model = LlavaForConditionalGeneration.from_pretrained("pasithbas159/TC_LLaVA_hydro_v0")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(device)
+
+    model, processor = patch_llava_with_mivc_tcattention(
+        frame_size=576, gamma=0.5, mivc_dim=1024
+    )
+    
+    model.from_pretrained("pasithbas159/TC_LLaVA_hydro_v0", device_map=device, torch_dtype=torch.float16, low_cpu_mem_usage=True,)
     processor = AutoProcessor.from_pretrained("pasithbas159/TC_LLaVA_hydro_v0")
 
     conversation = [
