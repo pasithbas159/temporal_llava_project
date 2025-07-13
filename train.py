@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from transformers import EarlyStoppingCallback
 from trl import SFTTrainer, SFTConfig
 
-from utils import convert_to_conversation
+from utils import convert_to_conversation, DataCollatorWithVisualMask
 from models.patch_llava import patch_llava_with_mivc_tcattention
 
 load_dotenv()
@@ -62,7 +62,8 @@ def main():
         model=model,
         train_dataset=train_conversation_dataset,
         eval_dataset = validation_conversation_dataset,
-        args=training_args
+        args=training_args, 
+        data_collator=DataCollatorWithVisualMask(processor)
     )
     
     trainer.add_callback(EarlyStoppingCallback(

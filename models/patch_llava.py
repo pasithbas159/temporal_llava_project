@@ -15,11 +15,14 @@ def patch_llava_with_mivc_tcattention(frame_size=576, gamma=0.5, mivc_dim=1024):
         # device_map="auto",
         device_map = device
     )
+        
     processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
     
     # ------------------------------------------
     # 🔹 Patch 1: Add MIVC pooling after vision encoder
     # ------------------------------------------
+    vit = model.model.vision_tower
+    frame_size = (vit.config.image_size // vit.config.patch_size) ** 2 + 1  # +1 for CLS
     vit_dim = model.model.vision_tower.config.hidden_size
     model.model.vision_mivc_pooling = MIVCPooling(in_dim=vit_dim, hidden_dim=mivc_dim)
 
@@ -43,7 +46,7 @@ def patch_llava_with_mivc_tcattention(frame_size=576, gamma=0.5, mivc_dim=1024):
     for i in range(num_layers - 5, num_layers):
         blk = model.model.language_model.layers[i]
         orig_attn = blk.self_attn
-        blk.self_attn = TCAttention(orig_attn, frame_size=576, gamma=0.5)
+        blk.self_attn = TCAttention(orig_attn, frame_size=frame_size, gamma=0.5)
     
     # ------------------------------------------
     # 🔹 Set trainable parameters
