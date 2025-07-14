@@ -23,7 +23,8 @@ def apply_dual_rope(q, k, freqs_abs, temporal_ids, freqs_temp):
     q = apply_rope(q, freqs_abs)
     k = apply_rope(k, freqs_abs)
 
-    freqs_temp = freqs_temp.to(q.device)[temporal_ids]
+    # Ensure temporal_ids is long for indexing
+    freqs_temp = freqs_temp.to(q.device)[temporal_ids.long()]
     freqs_temp = freqs_temp[None, None, :, :]
     q = apply_rope(q, freqs_temp)
     k = apply_rope(k, freqs_temp)
