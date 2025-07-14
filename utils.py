@@ -38,9 +38,13 @@ class DataCollatorWithVisualMask:
 
     def __call__(self, features):
         # features is a list of dicts with 'input_ids' (already tokenized)
-        # Pad input_ids to the same length
         import torch
         input_ids = [torch.tensor(f["input_ids"]) for f in features]
         batch_input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=0)
+        # attention_mask: 1 for non-padding, 0 for padding
+        attention_mask = (batch_input_ids != 0).long()
+        # labels: copy input_ids, set padding tokens to -100
+        labels = batch_input_ids.clone()
+        labels[batch_input_ids == 0] = -100
         visual_token_mask = compute_visual_token_mask(batch_input_ids)
-        return {"input_ids": batch_input_ids, "visual_token_mask": visual_token_mask}
+        return {"input_ids": batch_input_ids, "attention_mask": attention_mask, "labels": labels, "visual_token_mask": visual_token_mask}

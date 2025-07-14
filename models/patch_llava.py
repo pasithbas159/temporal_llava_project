@@ -8,11 +8,12 @@ def patch_llava_with_mivc_tcattention(frame_size=576, gamma=0.5, mivc_dim=1024):
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    model = LlavaForConditionalGeneration.from_pretrained(
+    from models.llava_loss_wrapper import LlavaWithLoss
+    
+    model = LlavaWithLoss.from_pretrained(
         "llava-hf/llava-1.5-7b-hf",
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
-        # device_map="auto",
         device_map = device
     )
         
